@@ -5,6 +5,7 @@
 #include <span>
 #include <memory>
 #include <vector>
+#include <bit>
 
 namespace kg {
 	template <typename Fn, typename T>

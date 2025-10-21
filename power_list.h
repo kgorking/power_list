@@ -73,6 +73,21 @@ namespace kg {
 				curr = curr->next[0];
 				index += 1;
 			}
+			constexpr void balance_all() {
+				assert(*this && "Called while invalid");
+
+				while (nullptr != curr->next[0]) {
+					while (steppers->target == index) {
+						steppers->from->next[1] = curr->next[0];
+						steppers->from = curr;
+						steppers->target += steppers->size;
+						drop_front_in_heap();
+					}
+
+					curr = curr->next[0];
+					index += 1;
+				}
+			}
 			constexpr operator bool() const {
 				return nullptr != curr->next[0];
 			}
@@ -320,14 +335,14 @@ namespace kg {
 				std::construct_at(&nodes[i], node{ {&nodes[i + 1], &nodes[i + 1]}, *curr++ });
 			}
 
-			// Create a rebalancing iterator
-			iterator it_rebalance{ head, count };
+			// Set up the balancer
+			balance_helper balancer{ head, count };
 
 			// Process the rest of the range while also rebalancing
 			for (; i < (count - 1); i += 1) {
 				assert(curr != end && "iterator/size mismatch");
 				std::construct_at(&nodes[i], node{ {&nodes[i + 1], &nodes[i + 1]}, *curr++ });
-				++it_rebalance;
+				balancer.balance_current_and_advance();
 			}
 
 			// Finally set up the tail node
@@ -351,7 +366,7 @@ namespace kg {
 				n->next[1] = head->next[1];
 				head = n;
 			}
-			else if (node* last = head->next[1]; last && (last->data < val)) { // after tail
+			else if (node* last = head->next[1]; last && (val > last->data)) { // after tail
 				last->next[0] = n;
 				last->next[1] = n;
 				head->next[1] = n;
@@ -402,12 +417,10 @@ namespace kg {
 		constexpr void rebalance() {
 			if (head && needs_rebalance) {
 				balance_helper bh(head, count);
-				while (bh)
-					bh.balance_current_and_advance();
+				bh.balance_all();
 
 				needs_rebalance = false;
 			}
-
 		}
 
 		[[nodiscard]] constexpr iterator find(T const& val) const {

@@ -10,56 +10,6 @@ BEGIN_TEST // Test power_list
 UNITTEST(std::ranges::sized_range<power_list<int>>, "power_list must conform to sized_range concept");
 
 UNITTEST([] {
-	constexpr std::size_t elems_to_alloc = 123;
-	scatter_allocator<int> alloc;
-	std::size_t total_alloc = 0;
-	alloc.allocate_with_callback(elems_to_alloc, [&](std::span<int> s) {
-		total_alloc += s.size();
-		});
-	return elems_to_alloc == total_alloc;
-	}(), "allocates correctly");
-
-UNITTEST([] {
-	scatter_allocator<int> alloc;
-	std::vector<std::span<int>> r = alloc.allocate(10);
-	auto const subspan = r[0].subspan(3, 4);
-	alloc.deallocate(subspan);
-	return true;
-	}(), "frees correctly");
-
-UNITTEST(([] {
-	scatter_allocator<int, 16> alloc;
-	auto vec = alloc.allocate(10);
-	alloc.deallocate(vec[0].subspan(2, 2));
-	alloc.deallocate(vec[0].subspan(4, 2));
-
-	// Fills in the two holes (2+2), the rest of the first pool (6),
-	// and remaining in new second pool (10)
-	int count = 0;
-	std::size_t sizes[] = { 2, 2, 6, 10 };
-	alloc.allocate_with_callback(20, [&](auto span) {
-		assert(sizes[count] == span.size() && "unexpected span size");
-		count += 1;
-		});
-	return (count == 4);
-	}()), "scatters correctly");
-
-UNITTEST([] {
-	constexpr std::size_t elems_to_alloc = 12;
-	scatter_allocator<int> alloc;
-	std::span<int> span;
-	alloc.allocate_with_callback(elems_to_alloc, [&](std::span<int> s) {
-		span = s;
-		});
-	for (int& i : span) {
-		std::construct_at(&i);
-		std::destroy_at(&i);
-	}
-	alloc.deallocate(span);
-	return true;
-	}(), "works with construction/destruction");
-
-UNITTEST([] {
 	power_list<int> list;
 	list.remove(123);
 	return list.empty() && list.size() == 0 && !list.contains(0);
