@@ -288,11 +288,11 @@ namespace kg {
 
 		constexpr void assign_range(std::ranges::sized_range auto const& range) {
 			assert(std::ranges::is_sorted(range) && "Input range must be sorted");
-			if (range.empty())
-				return;
-
 			if (!empty())
 				clear();
+
+			if (range.empty())
+				return;
 
 			// Save the range size
 			count = std::size(range);

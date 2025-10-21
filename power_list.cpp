@@ -120,9 +120,11 @@ UNITTEST([] {
 UNITTEST([] {
 	power_list<int> list(std::views::iota(-2, 2));
 	list.assign_range(std::views::iota(0, 4));
-	list.assign_range(std::views::iota(4, 8));
-	assert(list.size() == 4 && "Invalid element count in list");
-	return std::ranges::contains_subrange(std::views::iota(4, 8), list);
+	list.assign_range(std::views::iota(4, 10));
+	assert(list.size() == 6 && "Invalid element count in list");
+	assert(std::ranges::contains_subrange(std::views::iota(4, 10), list));
+	list.assign_range(std::vector<int>{});
+	return list.empty();
 	}(), "Assign from a range");
 
 UNITTEST([] {

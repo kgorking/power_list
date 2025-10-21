@@ -4,8 +4,8 @@
 
 #if 1
 #define UNITTEST static_assert
-#define BEGIN_TEST int main() {}
-#define END_TEST 
+#define BEGIN_TEST int main() {
+#define END_TEST }
 #else
 #include <cassert>
 #define xassert(e, sz) assert((e) && (sz))
