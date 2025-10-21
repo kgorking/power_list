@@ -63,12 +63,11 @@ namespace kg {
 			constexpr void balance_current_and_advance() {
 				assert(*this && "Called while invalid");
 
-				std::span<stepper> heap(steppers, steppers + log_n);
-				while (heap.front().target == index) {
-					heap.front().from->next[1] = curr->next[0];
-					heap.front().from = curr;
-					heap.front().target += heap.front().size;
-					drop_front_in_heap(heap);
+				while (steppers->target == index) {
+					steppers->from->next[1] = curr->next[0];
+					steppers->from = curr;
+					steppers->target += steppers->size;
+					drop_front_in_heap();
 				}
 
 				curr = curr->next[0];
@@ -80,18 +79,18 @@ namespace kg {
 
 		private:
 			// Drops the front stepper down the heap until the heap property is restored
-			constexpr static void drop_front_in_heap(std::span<stepper> heap) {
+			constexpr void drop_front_in_heap() {
 				std::size_t index = 0;
 				do {
-					std::size_t const max = 2 * index + (heap[2 * index] > heap[2 * index + 1]);
-					if (heap[index] > heap[max]) {
-						std::swap<stepper>(heap[index], heap[max]);
+					std::size_t const max = 2 * index + (steppers[2 * index] > steppers[2 * index + 1]);
+					if (steppers[index] > steppers[max]) {
+						std::swap<stepper>(steppers[index], steppers[max]);
 						index = max;
 					}
 					else {
 						break;
 					}
-				} while (2 * index + 1 < heap.size());
+				} while (2 * index + 1 < log_n);
 			}
 		};
 
@@ -339,7 +338,8 @@ namespace kg {
 		}
 
 		constexpr void insert(T val) {
-			node* n = alloc.allocate_one();
+			auto const span = alloc.allocate_one();
+			node* n = span.data();
 			std::construct_at(n, node{ {nullptr, nullptr}, val });
 
 			if (head == nullptr) { // empty

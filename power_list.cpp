@@ -1,4 +1,5 @@
 ﻿#include <ranges>
+#include <iostream>
 #include "power_list.h"
 #include "unittest.h"
 
@@ -121,9 +122,7 @@ UNITTEST([] {
 	list.assign_range(std::views::iota(0, 4));
 	list.assign_range(std::views::iota(4, 8));
 	assert(list.size() == 4 && "Invalid element count in list");
-	for (int v : std::views::iota(4, 8))
-		assert(list.contains(v));
-	return true;
+	return std::ranges::contains_subrange(std::views::iota(4, 8), list);
 	}(), "Assign from a range");
 
 UNITTEST([] {
@@ -136,24 +135,18 @@ UNITTEST([] {
 	power_list<int> list(std::views::iota(0, 1));
 	list.remove(0);
 	return list.empty();
-	}(), "Remove one");
+	}(), "Remove single value");
 
 UNITTEST([] {
 	power_list<int> list(std::views::iota(0, 8));
 	list.remove(0);
-	for (int v : std::views::iota(1, 8))
-		if (!list.contains(v))
-			return false;
-	return 7 == list.size();
+	return std::ranges::contains_subrange(std::views::iota(1, 8), list);
 	}(), "Remove head");
 
 UNITTEST([] {
 	power_list<int> list(std::views::iota(0, 8));
 	list.remove(7);
-	for (int v : std::views::iota(0, 7))
-		assert(list.contains(v));
-	;
-	return 7 == list.size();
+	return std::ranges::contains_subrange(std::views::iota(0, 7), list);
 	}(), "Remove tail");
 
 UNITTEST([] {

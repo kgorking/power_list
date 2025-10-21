@@ -44,16 +44,17 @@ namespace kg {
 			return r;
 		}
 
-		constexpr T* allocate_one() {
-			T* t{};
+		constexpr std::span<T> allocate_one() {
+			std::span<T> t;
 			allocate_with_callback(1, [&t](std::span<T> s) {
-				assert(t == nullptr);
+				assert(t.empty());
 				assert(s.size() == 1);
-				t = s.data();
+				t = s;
 				});
 			return t;
 		}
 
+		// EXTENT !!
 		constexpr void allocate_with_callback(std::size_t const count, callback_takes_a_span<T> auto&& alloc_callback) {
 			std::size_t remaining_count = count;
 
