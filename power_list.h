@@ -1,13 +1,8 @@
 ﻿#ifndef POWER_LIST_H
 #define POWER_LIST_H
 
-#include "scatter_allocator.h"
 #include <cassert>
-#include <span>
-#include <iterator>
 #include <bit>
-#include <algorithm>
-#include <ranges> // only for std::ranges::sized_range -_-
 
 namespace kg {
 	template <typename T>
@@ -17,260 +12,10 @@ namespace kg {
 			T data;
 		};
 
-		struct balance_helper {
-			struct stepper {
-				std::size_t target;
-				std::size_t size;
-				node* from;
-			};
-
-			node* curr{};
-			std::size_t count{};
-			std::size_t log_n{};
-			std::size_t index{ 0 };
-			std::vector<stepper> steppers;
-
-			constexpr balance_helper(balance_helper const& other)
-				: curr(other.curr), count(other.count), log_n(other.log_n), steppers(other.steppers) {
-			}
-			constexpr balance_helper(node* const n, std::size_t count) : curr(n), count(count), log_n(std::bit_width(count - 1)), steppers(log_n) {
-				// Set up steppers
-				node* current = n;
-				for (std::size_t i = 0, step = count; current != nullptr && i < log_n; i++, step >>= 1) {
-					steppers[log_n - 1 - i].target = i + step;
-					steppers[log_n - 1 - i].size = step;
-					steppers[log_n - 1 - i].from = current;
-
-					current = current->next[0];
-				}
-			}
-			constexpr ~balance_helper() {
-				while (!done())
-					balance_current_and_advance();
-	
-				// TODO! Instead of just pointing to the last element, which
-				//       will make deletions harder, drop them down a power,
-				//       eg. 32 drops to 16+1
-				for (std::size_t i = 0; i < log_n; i++)
-					steppers[i].from->next[1] = curr;
-			}
-			constexpr void balance_current_and_advance() {
-				assert(!done() && "Called while invalid");
-
-				while (steppers.front().target == index) {
-					steppers.front().from->next[1] = curr->next[0];
-					steppers.front().from = curr;
-					steppers.front().target += steppers.front().size;
-					drop_front_in_heap();
-				}
-
-				curr = curr->next[0];
-				index += 1;
-			}
-			constexpr void balance_all() {
-				assert(!done() && "Called while invalid");
-
-				while (nullptr != curr->next[0]) {
-					while (steppers.front().target == index) {
-						steppers.front().from->next[1] = curr->next[0];
-						steppers.front().from = curr;
-						steppers.front().target += steppers.front().size;
-						drop_front_in_heap();
-					}
-
-					curr = curr->next[0];
-					index += 1;
-				}
-			}
-			[[nodiscard]] constexpr bool done() const {
-				return nullptr == curr->next[0];
-			}
-
-		private:
-			// Drops the front stepper down the heap until the heap property is restored
-			constexpr void drop_front_in_heap() {
-				std::size_t i = 0;
-				do {
-					std::size_t const max = 2 * i + (steppers[2 * i].target > steppers[2 * i + 1].target);
-					if (steppers[i].target > steppers[max].target) {
-						std::swap<stepper>(steppers[i], steppers[max]);
-						i = max;
-					}
-					else {
-						break;
-					}
-				} while (2 * i + 1 < log_n);
-			}
-		};
-
 	public:
-		struct iterator {
-			friend class power_list;
-
-			// iterator traits
-			using difference_type = ptrdiff_t;
-			using value_type = T;
-			using pointer = const T*;
-			using reference = const T&;
-			using iterator_category = std::forward_iterator_tag;
-
-			constexpr iterator() noexcept = default;
-			constexpr iterator(iterator const& other) noexcept {
-				curr = other.curr;
-				prev = other.prev;
-				helper = other.helper ? new balance_helper(other.helper->curr, other.helper->count) : nullptr;
-			}
-			constexpr iterator(iterator&& other) noexcept : curr(other.curr), prev(other.prev), helper(std::exchange(other.helper, nullptr)) {}
-			constexpr iterator(node* const n, std::size_t count) : curr(n) {
-				if (count > 0) // ? TODO > 16
-					helper = new balance_helper(n, count);
-			}
-			constexpr iterator(node* curr, node* prev) : curr(curr), prev(prev) {}
-			constexpr ~iterator() {
-				delete helper;
-			}
-
-			constexpr iterator& operator=(iterator const& other) {
-				if (this != &other) {
-					curr = other.curr;
-					prev = other.prev;
-					helper = other.helper ? new balance_helper(other.helper->curr, other.helper->count) : nullptr;
-				}
-				return *this;
-			}
-
-			constexpr iterator& operator=(iterator&& other) noexcept {
-				curr = other.curr;
-				prev = other.prev;
-				delete helper;
-				helper = std::exchange(other.helper, nullptr);
-				return *this;
-			}
-
-			constexpr std::strong_ordering operator<=>(iterator const& other) const {
-				if (curr && !other.curr)
-					return std::strong_ordering::less;
-				if (!curr && other.curr)
-					return std::strong_ordering::greater;
-				return curr->data <=> other.curr->data;
-			}
-
-			constexpr iterator& operator++() {
-				assert(curr != nullptr && "Trying to step past end of list");
-				if (helper && !helper->done())
-					helper->balance_current_and_advance();
-				prev = curr;
-				curr = curr->next[0];
-				return *this;
-			}
-
-			constexpr iterator operator++(int) {
-				iterator const retval = *this;
-				++(*this);
-				return retval;
-			}
-
-			constexpr bool operator==(std::default_sentinel_t) const {
-				return curr == nullptr;
-			}
-
-			constexpr bool operator==(iterator other) const {
-				return curr == other.curr;
-			}
-
-			constexpr bool operator!=(iterator other) const {
-				return !(*this == other);
-			}
-
-			constexpr operator bool() const {
-				return curr != nullptr;
-			}
-
-			constexpr value_type operator*() const {
-				assert(curr != nullptr && "Dereferencing null");
-				return curr->data;
-			}
-
-			constexpr pointer operator->() const {
-				assert(curr != nullptr && "Dereferencing null");
-				return &curr->data;
-			}
-
-		private:
-			node* curr{};
-			node* prev{};
-			balance_helper* helper{};
-		};
-		using const_iterator = iterator;
-
 		constexpr power_list() = default;
-
-		constexpr power_list(power_list const& other) {
-			assign_range(other);
-		}
-
-		constexpr power_list(power_list&& other) noexcept {
-			head = std::exchange(other.head, nullptr);
-			count = other.count;
-			needs_rebalance = other.needs_rebalance;
-			alloc = std::move(other.alloc);
-			other.count = 0;
-			other.needs_rebalance = false;
-		}
-
-		constexpr explicit power_list(std::ranges::sized_range auto const& range) {
-			assign_range(range);
-		}
-
 		constexpr ~power_list() {
 			destroy_nodes();
-		}
-
-		constexpr bool operator==(power_list const& pl) const {
-			if (head == pl.head)
-				return true;
-
-			if (head == nullptr || pl.head == nullptr)
-				return false;
-
-			if (count != pl.count)
-				return false;
-
-			if (head->data != pl.head->data)
-				return false;
-
-			if (head->next[1] != nullptr && head->next[1]->data != pl.head->next[1]->data)
-				return false;
-
-			node* a = head, * b = pl.head;
-			while (a) {
-				if (a->data != b->data)
-					return false;
-				a = a->next[0];
-				b = b->next[0];
-			}
-
-			return true;
-		}
-
-		[[nodiscard]] constexpr iterator begin() {
-			return { head, static_cast<std::size_t>(needs_rebalance ? count : 0) };
-		}
-		[[nodiscard]] constexpr iterator begin() const {
-			return { head, static_cast<std::size_t>(needs_rebalance ? count : 0) };
-		}
-		[[nodiscard]] constexpr const_iterator cbegin() const {
-			return { head, std::size_t{0} };
-		}
-
-		[[nodiscard]] constexpr std::default_sentinel_t end() {
-			return {};
-		}
-		[[nodiscard]] constexpr std::default_sentinel_t end() const {
-			return {};
-		}
-		[[nodiscard]] constexpr std::default_sentinel_t cend() const {
-			return {};
 		}
 
 		[[nodiscard]] constexpr std::size_t size() const {
@@ -293,67 +38,13 @@ namespace kg {
 
 		constexpr void clear() {
 			destroy_nodes();
-			alloc = scatter_allocator<node>{}; // TODO clear()
 			head = nullptr;
 			count = 0;
-			needs_rebalance = false;
-		}
-
-		constexpr void assign_range(std::ranges::sized_range auto const& range) {
-			assert(std::ranges::is_sorted(range) && "Input range must be sorted");
-			if (!empty())
-				clear();
-
-			if (range.empty())
-				return;
-
-			// Save the range size
-			count = std::size(range);
-
-			// Do the allocation
-			std::span<node> nodes;
-			alloc.allocate_with_callback(count, [&](std::span<node> span) {
-				assert(span.size() == count);
-				assert(nodes.empty());
-				assert(nullptr == head);
-				nodes = span;
-				});
-			head = nodes.data();
-
-			// Get the ranges iterator pair
-			auto curr = range.begin();
-			auto const end = range.end();
-
-			// Process the first part of the range.
-			// The rebalancer needs `logN` nodes before it can start.
-			auto const logN = static_cast<std::size_t>(std::bit_width(count - 1)); // why is this unsigned in libstdc++? Should be 'int', according to the standard.
-			std::size_t i = 0;
-			for (; i < logN; i += 1) {
-				assert(curr != end && "iterator/size mismatch");
-				std::construct_at(&nodes[i], node{ {&nodes[i + 1], &nodes[i + 1]}, *curr++ });
-			}
-
-			// Set up the balancer
-			balance_helper balancer{ head, count };
-
-			// Process the rest of the range while also rebalancing
-			for (; i < (count - 1); i += 1) {
-				assert(curr != end && "iterator/size mismatch");
-				std::construct_at(&nodes[i], node{ {&nodes[i + 1], &nodes[i + 1]}, *curr++ });
-				balancer.balance_current_and_advance();
-			}
-
-			// Finally, set up the tail node
-			std::construct_at(&nodes[i], node{ {nullptr, &nodes[i]}, *curr++ });
-
-			// Sanity checks
-			assert(curr == end && "Iterator should be at the end here");
+			rebalance_threshold = 0;
 		}
 
 		constexpr void insert(T val) {
-			auto const span = alloc.allocate_one();
-			node* n = span.data();
-			std::construct_at(n, node{ {nullptr, nullptr}, val });
+			node* n = new node{ {nullptr, nullptr}, val };
 
 			if (head == nullptr) { // empty
 				head = n;
@@ -377,23 +68,30 @@ namespace kg {
 			}
 
 			count += 1;
-			needs_rebalance = true;
+			rebalance();
 		}
-
-		// TODO
-		constexpr void insert_after(iterator, T);
 
 		constexpr void remove(T val) {
-			erase(find(val));
-		}
-
-		constexpr void erase(iterator it) {
-			if (!it)
+			if (head == nullptr || val < head->data || val > head->next[1]->data)
 				return;
 
-			node* n = it.curr;
+			node* n = head, *prev = nullptr;
+			while (n->next[0] && val > n->next[0]->data) {
+				n = n->next[val > n->next[1]->data];
+			}
+			while (n->data < val) {
+				// The only node in the list that can have 'next[0] == nullptr' is
+				// the last node in the list. It would have been reached in the above loop.
+				assert(n->next[0] != nullptr && "This should not be possible, by design");
+				prev = n;
+				n = n->next[0];
+			}
+
+			if (n->data != val)
+				return;
+
 			node* next = n->next[0];
-			if (it.prev == nullptr) { // head
+			if (prev == nullptr) { // head
 				if (next != nullptr) {
 					node* tail = n->next[1];
 					next->next[1] = tail;
@@ -402,33 +100,57 @@ namespace kg {
 			}
 			else {
 				if (next == nullptr) // tail
-					head->next[1] = it.prev;
-				it.prev->next[0] = next;
+					head->next[1] = prev;
+				prev->next[0] = next;
 			}
 
-			std::destroy_at(n);
-			alloc.deallocate({ n, 1 });
+			delete n;
 			count -= 1;
-			needs_rebalance = true;
+			rebalance();
 		}
 
 		constexpr void rebalance() {
+			bool const needs_rebalance = std::has_single_bit(count) && (count & rebalance_threshold) != 0;
 			if (head && needs_rebalance) {
-				balance_helper bh(head, count);
-				bh.balance_all();
+				std::size_t const log_n{std::bit_width(count - 1)};
+				std::size_t index{ 0 };
+				auto steppers = new stepper[log_n];
 
-				needs_rebalance = false;
+				node* current = head;
+				for (std::size_t i = 0, step = count; current != nullptr && i < log_n; i++, step >>= 1) {
+					steppers[log_n - 1 - i].target = i + step;
+					steppers[log_n - 1 - i].size = step;
+					steppers[log_n - 1 - i].from = current;
+
+					current = current->next[0];
+				}
+				
+				while (nullptr != current->next[0]) {
+					while (steppers->target == index) {
+						steppers->from->next[1] = current->next[0];
+						steppers->from = current;
+						steppers->target += steppers->size;
+						drop_front_in_heap(steppers, log_n);
+					}
+
+					current = current->next[0];
+					index += 1;
+				}
+
+				for (std::size_t i = 0; i < log_n; i++)
+					steppers[i].from->next[1] = current;
+
+				delete[] steppers;
+				rebalance_threshold = (log_n << 1) | (log_n >> 1);
 			}
 		}
 
-		[[nodiscard]] constexpr iterator find(T const& val) const {
+		[[nodiscard]] constexpr node* find(T const& val) const {
 			if (head == nullptr || val < head->data || val > head->next[1]->data)
-				return {};
+				return nullptr;
 
-			node* prev = nullptr;
 			node* n = head;
 			while (n->next[0] && val > n->next[0]->data) {
-				prev = n;
 				n = n->next[val > n->next[1]->data];
 			}
 			while (n->data < val) {
@@ -436,36 +158,48 @@ namespace kg {
 				// the last node in the list. It would have been reached in the above loop.
 				assert(n->next[0] != nullptr && "This should not be possible, by design");
 
-				prev = n;
 				n = n->next[0];
 			}
 
 			if (n->data == val)
-				return { n, prev };
+				return n;
 			else
-				return {};
+				return nullptr;
 		}
 
-		[[nodiscard]] constexpr iterator lower_bound(T const& val) const {
+		[[nodiscard]] constexpr node* lower_bound(T const& val) const {
 			if (empty())
-				return {};
+				return nullptr;
 			if (val < head->data)
-				return { head, nullptr };
+				return head;
 
-			node* prev = nullptr;
 			node* curr = head;
 			while (val > curr->data) {
-				prev = curr;
 				curr = curr->next[val > curr->next[1]->data];
 			}
-			return { curr, prev };
+			return curr;
 		}
 
 		constexpr bool contains(T const& val) const {
-			return find(val);
+			return find(val) != nullptr;
 		}
 
 	private:
+		// Drops the front stepper down the heap until the heap property is restored (same as a pop and push)
+		static constexpr void drop_front_in_heap(stepper* steppers, std::size_t log_n) {
+			std::size_t i = 0;
+			do {
+				std::size_t const max = 2 * i + (steppers[2 * i].target > steppers[2 * i + 1].target);
+				if (steppers[i].target > steppers[max].target) {
+					std::swap<stepper>(steppers[i], steppers[max]);
+					i = max;
+				}
+				else {
+					break;
+				}
+			} while (2 * i + 1 < log_n);
+		}
+
 		constexpr void destroy_nodes() {
 			node* n = head;
 			head = nullptr;
@@ -478,9 +212,8 @@ namespace kg {
 		}
 
 		node* head = nullptr;
-		std::size_t count : 63 = 0;
-		std::size_t needs_rebalance : 1 = false;
-		scatter_allocator<node> alloc;
+		std::size_t count : 56 = 0;
+		std::size_t rebalance_threshold : 8 = 0; // 8 bits -> log count +- 1  ?
 	};
 }
 #endif
