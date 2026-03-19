@@ -22,51 +22,45 @@ namespace kg {
 				std::size_t target;
 				std::size_t size;
 				node* from;
-				constexpr bool operator<(stepper const& r) const {
-					return (r.target < target);
-				}
-				constexpr auto operator<=>(stepper const&) const = default;
 			};
 
 			node* curr{};
 			std::size_t count{};
 			std::size_t log_n{};
 			std::size_t index{ 0 };
-			stepper* steppers{};
+			std::vector<stepper> steppers;
 
 			constexpr balance_helper(balance_helper const& other)
-				: curr(other.curr), count(other.count), log_n(other.log_n), steppers(new stepper[log_n]) {
-				// Copy steppers
-				for (std::size_t i = 0; i < log_n; i++) {
-					steppers[i] = other.steppers[i];
-				}
+				: curr(other.curr), count(other.count), log_n(other.log_n), steppers(other.steppers) {
 			}
-			constexpr balance_helper(node* const n, std::size_t count) : curr(n), count(count), log_n(std::bit_width(count - 1)), steppers(new stepper[log_n]) {
+			constexpr balance_helper(node* const n, std::size_t count) : curr(n), count(count), log_n(std::bit_width(count - 1)), steppers(log_n) {
 				// Set up steppers
 				node* current = n;
 				for (std::size_t i = 0, step = count; current != nullptr && i < log_n; i++, step >>= 1) {
-					steppers[log_n - 1 - i] = { i + step, step, current };
+					steppers[log_n - 1 - i].target = i + step;
+					steppers[log_n - 1 - i].size = step;
+					steppers[log_n - 1 - i].from = current;
+
 					current = current->next[0];
 				}
 			}
 			constexpr ~balance_helper() {
-				while (*this)
+				while (!done())
 					balance_current_and_advance();
-
+	
 				// TODO! Instead of just pointing to the last element, which
 				//       will make deletions harder, drop them down a power,
 				//       eg. 32 drops to 16+1
 				for (std::size_t i = 0; i < log_n; i++)
 					steppers[i].from->next[1] = curr;
-				delete[] steppers;
 			}
 			constexpr void balance_current_and_advance() {
-				assert(*this && "Called while invalid");
+				assert(!done() && "Called while invalid");
 
-				while (steppers->target == index) {
-					steppers->from->next[1] = curr->next[0];
-					steppers->from = curr;
-					steppers->target += steppers->size;
+				while (steppers.front().target == index) {
+					steppers.front().from->next[1] = curr->next[0];
+					steppers.front().from = curr;
+					steppers.front().target += steppers.front().size;
 					drop_front_in_heap();
 				}
 
@@ -74,13 +68,13 @@ namespace kg {
 				index += 1;
 			}
 			constexpr void balance_all() {
-				assert(*this && "Called while invalid");
+				assert(!done() && "Called while invalid");
 
 				while (nullptr != curr->next[0]) {
-					while (steppers->target == index) {
-						steppers->from->next[1] = curr->next[0];
-						steppers->from = curr;
-						steppers->target += steppers->size;
+					while (steppers.front().target == index) {
+						steppers.front().from->next[1] = curr->next[0];
+						steppers.front().from = curr;
+						steppers.front().target += steppers.front().size;
 						drop_front_in_heap();
 					}
 
@@ -88,24 +82,24 @@ namespace kg {
 					index += 1;
 				}
 			}
-			constexpr operator bool() const {
-				return nullptr != curr->next[0];
+			[[nodiscard]] constexpr bool done() const {
+				return nullptr == curr->next[0];
 			}
 
 		private:
 			// Drops the front stepper down the heap until the heap property is restored
 			constexpr void drop_front_in_heap() {
-				std::size_t index = 0;
+				std::size_t i = 0;
 				do {
-					std::size_t const max = 2 * index + (steppers[2 * index] > steppers[2 * index + 1]);
-					if (steppers[index] > steppers[max]) {
-						std::swap<stepper>(steppers[index], steppers[max]);
-						index = max;
+					std::size_t const max = 2 * i + (steppers[2 * i].target > steppers[2 * i + 1].target);
+					if (steppers[i].target > steppers[max].target) {
+						std::swap<stepper>(steppers[i], steppers[max]);
+						i = max;
 					}
 					else {
 						break;
 					}
-				} while (2 * index + 1 < log_n);
+				} while (2 * i + 1 < log_n);
 			}
 		};
 
@@ -137,13 +131,15 @@ namespace kg {
 			}
 
 			constexpr iterator& operator=(iterator const& other) {
-				curr = other.curr;
-				prev = other.prev;
-				helper = other.helper ? new balance_helper(other.helper->curr, other.helper->count) : nullptr;
+				if (this != &other) {
+					curr = other.curr;
+					prev = other.prev;
+					helper = other.helper ? new balance_helper(other.helper->curr, other.helper->count) : nullptr;
+				}
 				return *this;
 			}
 
-			constexpr iterator& operator=(iterator&& other) {
+			constexpr iterator& operator=(iterator&& other) noexcept {
 				curr = other.curr;
 				prev = other.prev;
 				delete helper;
@@ -161,7 +157,7 @@ namespace kg {
 
 			constexpr iterator& operator++() {
 				assert(curr != nullptr && "Trying to step past end of list");
-				if (helper && *helper)
+				if (helper && !helper->done())
 					helper->balance_current_and_advance();
 				prev = curr;
 				curr = curr->next[0];
@@ -213,14 +209,16 @@ namespace kg {
 			assign_range(other);
 		}
 
-		constexpr power_list(power_list&& other) {
+		constexpr power_list(power_list&& other) noexcept {
 			head = std::exchange(other.head, nullptr);
-			count = std::exchange(other.count, 0);
-			needs_rebalance = std::exchange(other.needs_rebalance, false);
+			count = other.count;
+			needs_rebalance = other.needs_rebalance;
 			alloc = std::move(other.alloc);
+			other.count = 0;
+			other.needs_rebalance = false;
 		}
 
-		constexpr power_list(std::ranges::sized_range auto const& range) {
+		constexpr explicit power_list(std::ranges::sized_range auto const& range) {
 			assign_range(range);
 		}
 
@@ -326,9 +324,9 @@ namespace kg {
 			auto curr = range.begin();
 			auto const end = range.end();
 
-			// Process first part of the range.
+			// Process the first part of the range.
 			// The rebalancer needs `logN` nodes before it can start.
-			std::size_t const logN = (std::size_t)std::bit_width(count - 1); // why is this unsigned in libstdc++? Should be 'int' according to standard.
+			auto const logN = static_cast<std::size_t>(std::bit_width(count - 1)); // why is this unsigned in libstdc++? Should be 'int', according to the standard.
 			std::size_t i = 0;
 			for (; i < logN; i += 1) {
 				assert(curr != end && "iterator/size mismatch");
@@ -345,7 +343,7 @@ namespace kg {
 				balancer.balance_current_and_advance();
 			}
 
-			// Finally set up the tail node
+			// Finally, set up the tail node
 			std::construct_at(&nodes[i], node{ {nullptr, &nodes[i]}, *curr++ });
 
 			// Sanity checks

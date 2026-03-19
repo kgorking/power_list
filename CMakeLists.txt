@@ -13,5 +13,5 @@ set (CMAKE_CXX_STANDARD 23)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project ("power_list")
-add_executable (power_list "power_list.cpp")
-add_executable (scatter_allocator "scatter_allocator.cpp")
+add_executable (test_power_list "test_power_list.cpp")
+add_executable (test_scatter_allocator "test_scatter_allocator.cpp")

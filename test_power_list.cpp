@@ -12,7 +12,7 @@ UNITTEST(std::ranges::sized_range<power_list<int>>, "power_list must conform to 
 UNITTEST([] {
 	power_list<int> list;
 	list.remove(123);
-	return list.empty() && list.size() == 0 && !list.contains(0);
+	return list.empty() && !list.contains(0);
 	}(), "Empty list");
 
 UNITTEST([] {
@@ -25,7 +25,7 @@ UNITTEST([] {
 
 UNITTEST([] {
 	auto const iota = std::views::iota(-2, 2);
-	power_list<int> list(iota);
+	const power_list<int> list(iota);
 	power_list<int> list2(list);
 	return list == list2;
 	}(), "Copy construction");
