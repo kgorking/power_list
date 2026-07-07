@@ -1,7 +1,7 @@
 ﻿# CMakeList.txt : CMake project for power_list, include source and define
 # project specific logic here.
 #
-cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required (VERSION 4.0)
 
 # Enable Hot Reload for MSVC compilers if supported.
 if (POLICY CMP0141)
@@ -13,5 +13,5 @@ set (CMAKE_CXX_STANDARD 23)
 set (CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project ("power_list")
+add_executable (histogram "histogram.cpp")
 add_executable (test_power_list "test_power_list.cpp")
-add_executable (test_scatter_allocator "test_scatter_allocator.cpp")

@@ -1,8 +1,13 @@
 ﻿#ifndef POWER_LIST_H
 #define POWER_LIST_H
 
-#include <cassert>
+#include <array>
 #include <bit>
+#include <cassert>
+
+// The maximum size of the list, as 2^N
+constexpr unsigned char MaxPow2Size = 58;
+constexpr unsigned char RebalanceThresholdSize = 64 - MaxPow2Size;
 
 namespace kg {
 	template <typename T>
@@ -12,8 +17,13 @@ namespace kg {
 			T data;
 		};
 
+		struct stepper {
+			std::size_t target;
+			std::size_t size;
+			node* from;
+		};
+
 	public:
-		constexpr power_list() = default;
 		constexpr ~power_list() {
 			destroy_nodes();
 		}
@@ -40,7 +50,7 @@ namespace kg {
 			destroy_nodes();
 			head = nullptr;
 			count = 0;
-			rebalance_threshold = 0;
+			rebalance_threshold = ~0;
 		}
 
 		constexpr void insert(T val) {
@@ -61,10 +71,11 @@ namespace kg {
 				head->next[1] = n;
 			}
 			else { // middle
-				iterator it = lower_bound(val);
-				it.prev->next[0] = n;
-				n->next[0] = it.curr;
-				n->next[1] = it.curr->next[1];
+				node* it = lower_bound(val);
+				n->next[0] = it->next[0];
+				n->next[1] = it->next[1];
+				it->next[0] = n;
+				it->next[1] = n->next[1];
 			}
 
 			count += 1;
@@ -80,9 +91,6 @@ namespace kg {
 				n = n->next[val > n->next[1]->data];
 			}
 			while (n->data < val) {
-				// The only node in the list that can have 'next[0] == nullptr' is
-				// the last node in the list. It would have been reached in the above loop.
-				assert(n->next[0] != nullptr && "This should not be possible, by design");
 				prev = n;
 				n = n->next[0];
 			}
@@ -109,39 +117,52 @@ namespace kg {
 			rebalance();
 		}
 
-		constexpr void rebalance() {
-			bool const needs_rebalance = std::has_single_bit(count) && (count & rebalance_threshold) != 0;
-			if (head && needs_rebalance) {
-				std::size_t const log_n{std::bit_width(count - 1)};
-				std::size_t index{ 0 };
-				auto steppers = new stepper[log_n];
+		constexpr void rebalance(bool force = false) {
+			//if (count <= 16) return;
 
+			auto const log_n = std::bit_width(count - 1);
+			bool const needs_rebalance = std::has_single_bit(count) && (log_n & rebalance_threshold);
+
+			if (head != nullptr && (force || needs_rebalance)) {
+				auto const count_next_pow2 = 1 << log_n;
+				auto index = std::size_t{ 0 };
+
+				// The heap of steppers, used to balance the 'tree'.
+				std::array<stepper, MaxPow2Size> steppers;
+
+				// Set up the initial log(n) nodes.
+				// These work like the header in a skip-list, except they are inlined in the data.
 				node* current = head;
-				for (std::size_t i = 0, step = count; current != nullptr && i < log_n; i++, step >>= 1) {
+				for (std::size_t i = 0; i < log_n; i++) {
+					std::size_t const step = count_next_pow2 >> i;
 					steppers[log_n - 1 - i].target = i + step;
 					steppers[log_n - 1 - i].size = step;
 					steppers[log_n - 1 - i].from = current;
-
-					current = current->next[0];
-				}
-				
-				while (nullptr != current->next[0]) {
-					while (steppers->target == index) {
-						steppers->from->next[1] = current->next[0];
-						steppers->from = current;
-						steppers->target += steppers->size;
-						drop_front_in_heap(steppers, log_n);
-					}
-
+					
+					current->next[1] = nullptr; // reset current tree
 					current = current->next[0];
 					index += 1;
 				}
 
-				for (std::size_t i = 0; i < log_n; i++)
-					steppers[i].from->next[1] = current;
+				// Process the rest of the nodes
+				while (current && nullptr != current->next[0]) {
+					stepper* top = steppers.data();
+					while (top->target == index) {
+						top->from->next[1] = current->next[0];
+						top->from = current;
+						while (top->target + top->size > count && top->size > 1)
+							top->size >>= 1;
+						top->target += top->size;
+						drop_front_in_heap(top, log_n);
+					}
 
-				delete[] steppers;
-				rebalance_threshold = (log_n << 1) | (log_n >> 1);
+					current->next[1] = nullptr; // reset current tree
+					current = current->next[0];
+					index += 1;
+				}
+
+				head->next[1] = current;
+				rebalance_threshold = ~log_n;
 			}
 		}
 
@@ -154,10 +175,6 @@ namespace kg {
 				n = n->next[val > n->next[1]->data];
 			}
 			while (n->data < val) {
-				// The only node in the list that can have 'next[0] == nullptr' is
-				// the last node in the list. It would have been reached in the above loop.
-				assert(n->next[0] != nullptr && "This should not be possible, by design");
-
 				n = n->next[0];
 			}
 
@@ -167,17 +184,33 @@ namespace kg {
 				return nullptr;
 		}
 
+		[[nodiscard]] constexpr std::pair<int, node*> count_steps_to_find(T const& val) const {
+			if (head == nullptr || val < head->data || val > head->next[1]->data)
+				return std::make_pair(-1, nullptr);
+
+			int steps = 0;
+			node* n = head;
+			while (n->data < val) {
+				bool const lane = n->next[1] && (val >= n->next[1]->data);
+				n = n->next[lane];
+				steps += 1;
+			}
+
+			return (n->data == val) ? std::make_pair(steps, n) : std::make_pair(-1, nullptr);
+		}
+
 		[[nodiscard]] constexpr node* lower_bound(T const& val) const {
 			if (empty())
 				return nullptr;
 			if (val < head->data)
 				return head;
 
-			node* curr = head;
-			while (val > curr->data) {
-				curr = curr->next[val > curr->next[1]->data];
+			node* n = head;
+			while (n->next[0]->data < val) {
+				bool lane = n->next[1] && (val >= n->next[1]->data);
+				n = n->next[lane];
 			}
-			return curr;
+			return n;
 		}
 
 		constexpr bool contains(T const& val) const {
@@ -201,19 +234,18 @@ namespace kg {
 		}
 
 		constexpr void destroy_nodes() {
-			node* n = head;
-			head = nullptr;
-			while (n) {
-				node* next = n->next[0];
-				assert(n != next && "Node points to itself");
-				std::destroy_at(n);
-				n = next;
+			while (head) {
+				node* next = head->next[0];
+				assert(head != next && "Node points to itself");
+				delete head;
+				head = next;
 			}
+			head = nullptr;
 		}
 
 		node* head = nullptr;
-		std::size_t count : 56 = 0;
-		std::size_t rebalance_threshold : 8 = 0; // 8 bits -> log count +- 1  ?
+		std::size_t count : MaxPow2Size = 0;
+		std::size_t rebalance_threshold : RebalanceThresholdSize = ~0;
 	};
 }
 #endif
