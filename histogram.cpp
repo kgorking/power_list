@@ -34,7 +34,11 @@ int main() {
 
 		histogram[steps] += 1;
 		if (node->next[1]) {
-			step_histogram[node->next[1]->data - node->data] += 1;
+			int const diff = node->next[1]->data - node->data;
+			step_histogram[diff] += 1;
+		}
+		else {
+			step_histogram[0] += 1;
 		}
 	}
 
@@ -63,14 +67,4 @@ int main() {
 	}
 	std::println("-------+---------");
 	std::println("total  | {} different offsets", step_histogram.size());
-
-
-	std::println("\nStep counts for the first 2*log N values");
-	std::println("value  | steps");
-	std::println("-------+---------");
-	for (int i = 0; i < 2*std::bit_width(num_values); i++) {
-		auto const [steps, _] = list.count_steps_to_find(i);
-		std::println("{:6} | {}", i, steps);
-	}
-	std::println("-------+---------");
 }

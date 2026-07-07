@@ -118,14 +118,13 @@ namespace kg {
 		}
 
 		constexpr void rebalance(bool force = false) {
-			//if (count <= 16) return;
+			if (count <= 1) return;
 
 			auto const log_n = std::bit_width(count - 1);
 			bool const needs_rebalance = std::has_single_bit(count) && (log_n & rebalance_threshold);
 
 			if (head != nullptr && (force || needs_rebalance)) {
 				auto const count_next_pow2 = 1 << log_n;
-				auto index = std::size_t{ 0 };
 
 				// The heap of steppers, used to balance the 'tree'.
 				std::array<stepper, MaxPow2Size> steppers;
@@ -133,15 +132,15 @@ namespace kg {
 				// Set up the initial log(n) nodes.
 				// These work like the header in a skip-list, except they are inlined in the data.
 				node* current = head;
-				for (std::size_t i = 0; i < log_n; i++) {
-					std::size_t const step = count_next_pow2 >> i;
-					steppers[log_n - 1 - i].target = i + step;
-					steppers[log_n - 1 - i].size = step;
-					steppers[log_n - 1 - i].from = current;
+				auto index = std::size_t{ 0 };
+				for (; index < log_n; index++) {
+					std::size_t const step = count_next_pow2 >> index;
+					steppers[log_n - 1 - index].target = index + step;
+					steppers[log_n - 1 - index].size = step;
+					steppers[log_n - 1 - index].from = current;
 					
-					current->next[1] = nullptr; // reset current tree
+					current->next[1] = current->next[0]; // reset current tree
 					current = current->next[0];
-					index += 1;
 				}
 
 				// Process the rest of the nodes
@@ -150,15 +149,17 @@ namespace kg {
 					while (top->target == index) {
 						top->from->next[1] = current->next[0];
 						top->from = current;
-						while (top->target + top->size > count && top->size > 1)
-							top->size >>= 1;
 						top->target += top->size;
 						drop_front_in_heap(top, log_n);
 					}
 
-					current->next[1] = nullptr; // reset current tree
+					current->next[1] = current->next[0]; // reset current tree
 					current = current->next[0];
 					index += 1;
+				}
+
+				for (std::size_t i = 0; i < log_n; i++) {
+					steppers[i].from->next[1] = current;
 				}
 
 				head->next[1] = current;
@@ -171,11 +172,9 @@ namespace kg {
 				return nullptr;
 
 			node* n = head;
-			while (n->next[0] && val > n->next[0]->data) {
-				n = n->next[val > n->next[1]->data];
-			}
 			while (n->data < val) {
-				n = n->next[0];
+				bool const lane = val >= n->next[1]->data;
+				n = n->next[lane];
 			}
 
 			if (n->data == val)
@@ -191,7 +190,7 @@ namespace kg {
 			int steps = 0;
 			node* n = head;
 			while (n->data < val) {
-				bool const lane = n->next[1] && (val >= n->next[1]->data);
+				bool const lane = val >= n->next[1]->data;
 				n = n->next[lane];
 				steps += 1;
 			}
@@ -207,7 +206,7 @@ namespace kg {
 
 			node* n = head;
 			while (n->next[0]->data < val) {
-				bool lane = n->next[1] && (val >= n->next[1]->data);
+				bool const lane = val >= n->next[1]->data;
 				n = n->next[lane];
 			}
 			return n;
