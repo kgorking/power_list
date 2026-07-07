@@ -13,14 +13,14 @@ namespace kg {
 	template <typename T>
 	class power_list {
 		struct node {
-			node* next[2];
 			T data;
+			node* next[2];
 		};
 
 		struct stepper {
+			node* from;
 			std::size_t target;
 			std::size_t size;
-			node* from;
 		};
 
 	public:
@@ -54,7 +54,7 @@ namespace kg {
 		}
 
 		constexpr void insert(T val) {
-			node* n = new node{ {nullptr, nullptr}, val };
+			node* n = new node{ val, {} };
 
 			if (head == nullptr) { // empty
 				head = n;
@@ -125,25 +125,22 @@ namespace kg {
 
 			if (head != nullptr && (force || needs_rebalance)) {
 				auto const count_next_pow2 = 1 << log_n;
-
-				// The heap of steppers, used to balance the 'tree'.
-				std::array<stepper, MaxPow2Size> steppers;
-
-				// Set up the initial log(n) nodes.
-				// These work like the header in a skip-list, except they are inlined in the data.
 				node* current = head;
+
+				// Set up the min-heap of steppers, used to rebuild the 'tree'.
+				std::array<stepper, MaxPow2Size> steppers;
 				auto index = std::size_t{ 0 };
 				for (; index < log_n; index++) {
 					std::size_t const step = count_next_pow2 >> index;
+					steppers[log_n - 1 - index].from = current;
 					steppers[log_n - 1 - index].target = index + step;
 					steppers[log_n - 1 - index].size = step;
-					steppers[log_n - 1 - index].from = current;
 					
 					current->next[1] = current->next[0]; // reset current tree
 					current = current->next[0];
 				}
 
-				// Process the rest of the nodes
+				// Link up the skip-nodes
 				while (current && nullptr != current->next[0]) {
 					stepper* top = steppers.data();
 					while (top->target == index) {

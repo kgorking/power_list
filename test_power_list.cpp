@@ -7,13 +7,11 @@ using namespace kg;
 
 BEGIN_TEST // Test power_list
 
-/*
 UNITTEST([] {
 	power_list<int> list;
 	list.remove(123);
 	return list.empty() && !list.contains(0);
 	}(), "Empty list");
-
 
 UNITTEST([] {
 	power_list<int> list;
@@ -80,9 +78,11 @@ UNITTEST([] {
 	list.remove(7);
 	return list.front() == 0 && list.back() == 6;
 	}(), "Remove tail");
-/*
+
 UNITTEST([] {
-	power_list<int> list(std::views::iota(0, 8));
+	power_list<int> list;
+	for (int i : std::views::iota(0, 8))
+		list.insert(i);
 	for (int v : std::views::iota(1, 7))
 		list.remove(v);
 	int items = 0;
@@ -101,31 +101,4 @@ UNITTEST([] {
 	return list.contains(1);
 	}(), "Explicit rebalance");
 
-UNITTEST([] {
-	auto const iota = std::views::iota(-10, 20);
-	power_list<int> list;
-	for (int v : iota)
-		list.insert(v);
-	int sum = 0;
-	for (int v : list)
-		sum += v;
-	return sum > 0 && list.contains(1);
-	}(), "Implicit rebalance");
-
-UNITTEST([] {
-	auto const iota = std::views::iota(0, 20);
-	power_list<int> list1(iota);
-	power_list<int> list2(iota);
-	if (list1 != list2)
-		return false;
-
-	power_list<int> list3;
-	for (int val : iota)
-		list3.insert(val);
-	if (list1 != list3)
-		return false;
-
-	return true;
-	}(), "Comparison operator");
-	*/
 END_TEST
