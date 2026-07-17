@@ -9,6 +9,10 @@
 constexpr unsigned char MaxPow2Size = 58;
 constexpr unsigned char RebalanceThresholdSize = 64 - MaxPow2Size;
 
+constexpr int log_2(std::unsigned_integral auto n) {
+	return std::bit_width(n) - 1;
+}
+
 namespace kg {
 	template <typename T>
 	class power_list {
@@ -50,7 +54,7 @@ namespace kg {
 			destroy_nodes();
 			head = nullptr;
 			count = 0;
-			rebalance_threshold = ~0;
+			rebalance_threshold = 0;
 		}
 
 		constexpr void insert(T val) {
@@ -79,7 +83,7 @@ namespace kg {
 			}
 
 			count += 1;
-			rebalance();
+			//rebalance();
 		}
 
 		constexpr void remove(T val) {
@@ -114,22 +118,25 @@ namespace kg {
 
 			delete n;
 			count -= 1;
-			rebalance();
+			//rebalance();
 		}
 
 		constexpr void rebalance(bool force = false) {
 			if (count <= 1) return;
 
 			auto const log_n = std::bit_width(count - 1);
-			bool const needs_rebalance = std::has_single_bit(count) && (log_n & rebalance_threshold);
+			if (log_n <= 1)
+				return;
+			bool const needs_rebalance = std::has_single_bit(count) && (log_n & ~rebalance_threshold);
 
 			if (head != nullptr && (force || needs_rebalance)) {
 				auto const count_next_pow2 = 1 << log_n;
 				node* current = head;
+				node* prev = head;
 
 				// Set up the min-heap of steppers, used to rebuild the 'tree'.
 				std::array<stepper, MaxPow2Size> steppers;
-				auto index = std::size_t{ 0 };
+				int index = 0;
 				for (; index < log_n; index++) {
 					std::size_t const step = count_next_pow2 >> index;
 					steppers[log_n - 1 - index].from = current;
@@ -141,26 +148,27 @@ namespace kg {
 				}
 
 				// Link up the skip-nodes
-				while (current && nullptr != current->next[0]) {
+				while (current ) {
 					stepper* top = steppers.data();
 					while (top->target == index) {
+						top->target += top->size;
 						top->from->next[1] = current->next[0];
 						top->from = current;
-						top->target += top->size;
 						drop_front_in_heap(top, log_n);
 					}
 
 					current->next[1] = current->next[0]; // reset current tree
+					prev = current;
 					current = current->next[0];
 					index += 1;
 				}
 
 				for (std::size_t i = 0; i < log_n; i++) {
-					steppers[i].from->next[1] = current;
+					steppers[i].from->next[1] = steppers[i].from->next[0];
 				}
 
-				head->next[1] = current;
-				rebalance_threshold = ~log_n;
+				head->next[1] = prev;
+				rebalance_threshold = log_n;
 			}
 		}
 

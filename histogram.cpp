@@ -23,20 +23,21 @@ int main() {
 	int max_steps = -1;
 	int index = -1;
 	for (int v : std::views::iota(0u, num_values)) {
-		auto const [steps, node] = list.count_steps_to_find(v);
+		auto [steps, node] = list.count_steps_to_find(v);
 		if (steps > max_steps) {
 			max_steps = steps;
 			index = v;
 		}
 
 		if (steps >= histogram.size()) {
+			steps = histogram.size() - 1;
 			//std::println("Error: too many steps {} at value {}", steps, v);
 			//return 1;
 		}
-		else {
-			// Count how many steps each search took
-			histogram[steps] += 1;
-		}
+
+		// Count how many steps each search took
+		histogram[steps] += 1;
+
 
 		if (node->next[1]) {
 			// Count the skip-size between a node and its skip node
@@ -47,8 +48,8 @@ int main() {
 			skips_histogram[node->next[1]->data] += 1;
 		}
 		else {
-			skips_histogram[0] += 1;
 			diffs_histogram[0] += 1;
+			//skips_histogram[0] += 1;
 		}
 	}
 
@@ -72,11 +73,13 @@ int main() {
 	std::println("\nHistogram of step difference between the current- and its fast-forward node");
 	std::println("diffs  | count");
 	std::println("-------+---------");
+	sum = 0;
 	for (auto const& [index, val] : diffs_histogram) {
+		sum += val;
 		std::println("{:6} | {}", index, val);
 	}
 	std::println("-------+---------");
-	std::println("total  | {} different offsets", diffs_histogram.size());
+	std::println("total  | {}, with {} different offsets", sum, diffs_histogram.size());
 
 
 	// Create a derivative(?) histogram to get number of skip counts.
